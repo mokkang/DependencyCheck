@@ -3,607 +3,436 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dependency Attack Path Visualizer — Critical & High Only</title>
+  <title>Critical Dependency Attack Path Visualizer</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
-    .container { max-width: 1400px; margin: 0 auto; background: rgba(255,255,255,.95); border-radius: 20px; padding: 30px; box-shadow: 0 20px 40px rgba(0,0,0,.1); backdrop-filter: blur(10px); }
-    h1 { text-align: center; color: #2c3e50; margin-bottom: 30px; font-size: 2.5em; background: linear-gradient(45deg, #3498db, #8e44ad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .controls { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-    .legend { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
-    .legend-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: rgba(255,255,255,.8); border-radius: 20px; border: 2px solid transparent; transition: all .3s ease; }
-    .legend-item:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,.1); }
-    .legend-circle { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; }
-    .critical { background: #e74c3c; }
-    .high { background: #f39c12; }
-    .context { background: #95a5a6; }
-    #graph-container { width: 100%; height: 600px; border: 3px solid #ddd; border-radius: 15px; overflow: hidden; background: radial-gradient(circle, #f8f9fa 0%, #e9ecef 100%); position: relative; }
-    .info-panel { position: fixed; top: 50%; right: 20px; transform: translateY(-50%); width: 350px; max-height: 70vh; overflow-y: auto; background: rgba(255,255,255,.98); border: 3px solid #3498db; border-radius: 20px; padding: 25px; box-shadow: 0 20px 40px rgba(0,0,0,.15); backdrop-filter: blur(15px); display: none; z-index: 1000; }
-    .info-panel h3 { margin-top: 0; color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-    .cve-item { background: linear-gradient(135deg, #fff5f5 0%, #ffeaea 100%); border: 2px solid #e74c3c; border-radius: 12px; padding: 15px; margin: 10px 0; transition: all .3s ease; }
-    .cve-item:hover { transform: translateX(5px); box-shadow: 0 5px 15px rgba(231,76,60,.2); }
-    .cve-id { font-weight: bold; color: #c0392b; font-size: 1.1em; }
-    .cve-score { float: right; background: #e74c3c; color: #fff; padding: 4px 10px; border-radius: 20px; font-size: .9em; font-weight: bold; }
-    .close-btn { position: absolute; top: 15px; right: 20px; background: #e74c3c; color: #fff; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 18px; transition: all .3s ease; }
-    .close-btn:hover { background: #c0392b; transform: rotate(90deg); }
-    .node { cursor: pointer; transition: all .3s ease; }
-    .node:hover { filter: drop-shadow(0 0 10px rgba(0,0,0,.3)); }
-    .link { stroke: #999; stroke-width: 2; cursor: pointer; transition: all .3s ease; }
-    .link:hover { stroke: #3498db; stroke-width: 4; filter: drop-shadow(0 0 5px rgba(52,152,219,.5)); }
-    .dependency-link { stroke: #3498db; stroke-width: 3; opacity: .8; }
-    .attack-path { stroke: #e74c3c; stroke-width: 4; stroke-dasharray: 10,5; animation: dash 2s linear infinite; }
-    @keyframes dash { to { stroke-dashoffset: -15; } }
-    .node-label { font-size: 12px; font-weight: bold; text-anchor: middle; fill: #2c3e50; pointer-events: none; }
-    button { background: linear-gradient(135deg, #3498db, #2980b9); color: #fff; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; transition: all .3s ease; box-shadow: 0 5px 15px rgba(52,152,219,.3); }
-    button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(52,152,219,.4); }
-    .tooltip { position: absolute; background: rgba(0,0,0,.9); color: #fff; padding: 10px; border-radius: 10px; pointer-events: none; font-size: 12px; max-width: 200px; z-index: 1000; opacity: 0; transition: opacity .3s ease; }
-    .context-node { opacity: 0.55; }
+    :root {
+      --bg1: #667eea; --bg2: #764ba2; --ink: #2c3e50; --panel: rgba(255,255,255,0.95);
+      --crit: #e74c3c; --high: #f39c12; --med: #f1c40f; --low: #2ecc71; --clean: #95a5a6;
+      --pri: #3498db;
+    }
+    *{box-sizing:border-box}
+    body{font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin:0;padding:20px;min-height:100vh;background:linear-gradient(135deg,var(--bg1) 0%,var(--bg2) 100%);color:#333}
+    .container{max-width:1400px;margin:0 auto;background:var(--panel);border-radius:20px;padding:24px 24px 28px;box-shadow:0 20px 40px rgba(0,0,0,.1);backdrop-filter:blur(10px)}
+    h1{margin:0 0 18px;text-align:center;font-size:2.2rem;color:var(--ink);background:linear-gradient(45deg,#3498db,#8e44ad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    label.btn,input[type=file]{cursor:pointer}
+    .btn{background:linear-gradient(135deg,#3498db,#2980b9);color:white;border:none;padding:10px 18px;border-radius:22px;font-weight:600;box-shadow:0 5px 15px rgba(52,152,219,.3);transition:.2s}
+    .btn:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(52,152,219,.45)}
+    .btn-alt{background:linear-gradient(135deg,#27ae60,#2ecc71)}
+    .btn-ghost{background:white;color:#2980b9;border:2px solid #2980b9}
+    #graph-container{width:100%;height:620px;border:3px solid #ddd;border-radius:14px;overflow:hidden;background:radial-gradient(circle,#f8f9fa 0%,#e9ecef 100%);position:relative}
+    .legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 16px}
+    .legend-item{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,.9);border-radius:14px;border:2px solid transparent}
+    .circle{width:14px;height:14px;border-radius:50%;border:2px solid #fff}
+    .critical{background:var(--crit)}
+    .info-panel{position:fixed;top:50%;right:20px;transform:translateY(-50%);width:360px;max-height:74vh;overflow:auto;background:rgba(255,255,255,.98);border:3px solid var(--pri);border-radius:18px;padding:18px 20px;box-shadow:0 20px 40px rgba(0,0,0,.15);display:none;z-index:10}
+    .close-btn{position:absolute;right:12px;top:10px;background:var(--crit);color:#fff;border:none;width:28px;height:28px;border-radius:50%;cursor:pointer}
+    .node{cursor:pointer;transition:.2s}
+    .node:hover{filter:drop-shadow(0 0 10px rgba(0,0,0,.3))}
+    .link{stroke:#999;stroke-width:2;cursor:pointer}
+    .attack-path{stroke:var(--crit);stroke-width:4;stroke-dasharray:10 5;animation:dash 2s linear infinite}
+    @keyframes dash{to{stroke-dashoffset:-15}}
+    .node-label{font-size:12px;font-weight:700;text-anchor:middle;fill:var(--ink);pointer-events:none}
+    .tooltip{position:absolute;background:rgba(0,0,0,.9);color:#fff;padding:10px;border-radius:10px;pointer-events:none;font-size:12px;max-width:220px;z-index:1000;opacity:0;transition:opacity .15s}
+    .pill{display:inline-block;background:#eef6ff;border:1px solid #cfe3ff;border-radius:999px;padding:4px 9px;font-size:.8rem;color:#1f5ca8;margin:0 6px 6px 0}
+    .field{display:flex;gap:8px;align-items:center}
+    input[type=text],select{height:38px;border-radius:10px;border:2px solid #d7e6ff;padding:0 10px}
+    .muted{opacity:.8}
+    .small{font-size:.85rem}
+    .panel{background:#fff;border:2px solid #e7eefc;padding:10px 12px;border-radius:12px}
+    .result-step{padding:10px;border-left:4px solid var(--pri);background:#f8fbff;border-radius:8px;margin:8px 0}
   </style>
 </head>
 <body>
-  <br />
-  <div><a href="bnreplah.github.io/index.html" style="display:inline-block;padding:5px;margin:5px;border:1px solid white;z-index:0;position:absolute;">Home</a></div>
   <div class="container">
-    <h1>🔍 Dependency Attack Path Visualizer — Critical & High Only</h1>
+    <h1>🎯 Critical Dependency Attack Path Visualizer</h1>
 
     <div class="controls">
-      <div style="display:flex; align-items:center; gap:15px; margin-bottom:10px;">
-        <label for="file-upload" style="cursor:pointer;background:linear-gradient(135deg,#27ae60,#2ecc71);color:white;padding:12px 24px;border-radius:25px;font-weight:bold;transition:all .3s ease;box-shadow:0 5px 15px rgba(46,204,113,.3);">📄 Upload SBOM/Manifest</label>
-        <input type="file" id="file-upload" accept=".json,.yaml,.yml,.txt" style="display:none;" onchange="handleFileUpload(event)" />
-        <span id="file-status" style="color:#27ae60;font-weight:bold;"></span>
+      <div class="row">
+        <label for="file-upload" class="btn btn-alt">📄 Upload SBOM/Manifest</label>
+        <input id="file-upload" type="file" accept=".json,.xml,.yaml,.yml,.txt" style="display:none" />
+        <input id="project-name" type="text" placeholder="Project / Service name (e.g., msvc-orders)" />
+        <button id="ingest-btn" class="btn">📥 Ingest & Save</button>
+        <span id="file-status" class="pill muted"></span>
       </div>
-      <div style="display:flex; gap:15px; flex-wrap:wrap;">
-        <button onclick="showAttackPaths()">🎯 Highlight Attack Paths</button>
-        <button onclick="resetView()">🔄 Reset View</button>
-        <button onclick="centerGraph()">📍 Center Graph</button>
-        <button onclick="loadSampleData()">📊 Load Sample Data</button>
+      <div class="row">
+        <button id="btn-attack" class="btn">⚡ Highlight Critical Paths</button>
+        <button id="btn-reset" class="btn btn-ghost">🔄 Reset View</button>
+        <button id="btn-center" class="btn btn-ghost">📍 Center Graph</button>
+        <button id="btn-sample" class="btn btn-ghost">📊 Load Sample Data</button>
+        <span class="pill">Showing: <strong>Critical (CVSS ≥ 9.0)</strong> only</span>
       </div>
     </div>
 
     <div class="legend">
-      <div class="legend-item"><div class="legend-circle critical"></div><span>Critical CVE (9.0+)</span></div>
-      <div class="legend-item"><div class="legend-circle high"></div><span>High CVE (7.0–8.9)</span></div>
-      <div class="legend-item"><div class="legend-circle context"></div><span>Context node (no known CVEs)</span></div>
+      <div class="legend-item"><div class="circle critical"></div><span>Critical CVE (9.0+)</span></div>
+      <div class="legend-item"><span class="small muted">Nodes without critical findings are hidden from the graph but still stored in the DB.</span></div>
     </div>
 
     <div id="graph-container"></div>
+
+    <div style="margin-top:16px" class="panel">
+      <div class="row" style="gap:10px; align-items:flex-start; flex-wrap:wrap">
+        <div class="field"><label>Source:</label><input id="path-src" type="text" placeholder="e.g., msvc-orders" /></div>
+        <div class="field"><label>Target Library:</label><input id="path-dst" type="text" placeholder="e.g., tz (tz library)" /></div>
+        <button id="btn-find" class="btn">🧭 Find Path</button>
+        <span class="small muted">Tip: Use component IDs or names stored in the DB for this project.</span>
+      </div>
+      <div id="path-result"></div>
+    </div>
   </div>
 
   <div class="info-panel" id="info-panel">
-    <button class="close-btn" onclick="closeInfoPanel()">×</button>
+    <button class="close-btn" id="close-info">×</button>
     <div id="info-content"></div>
   </div>
 
   <div class="tooltip" id="tooltip"></div>
 
   <script>
-    // ===== Sample data =====
+    // ------------------------------
+    // Minimal IndexedDB wrapper
+    // ------------------------------
+    const DB_NAME = 'sbomdb';
+    const DB_VERSION = 1;
+
+    function openDB(){
+      return new Promise((resolve, reject)=>{
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e)=>{
+          const db = e.target.result;
+          if(!db.objectStoreNames.contains('projects')){
+            const ps = db.createObjectStore('projects', { keyPath: 'id' });
+          }
+          if(!db.objectStoreNames.contains('components')){
+            const cs = db.createObjectStore('components', { keyPath: ['projectId','id'] });
+            cs.createIndex('byProject', 'projectId');
+            cs.createIndex('byName', ['projectId','name']);
+          }
+          if(!db.objectStoreNames.contains('dependencies')){
+            const ds = db.createObjectStore('dependencies', { keyPath: ['projectId','source','target'] });
+            ds.createIndex('byProject', 'projectId');
+          }
+        };
+        req.onsuccess = ()=>resolve(req.result);
+        req.onerror = ()=>reject(req.error);
+      });
+    }
+
+    async function tx(store, mode='readonly'){ const db = await openDB(); return db.transaction(store, mode).objectStore(store); }
+
+    async function put(storeName, value){ const s = await tx(storeName, 'readwrite'); return new Promise((res,rej)=>{ const r=s.put(value); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error); }); }
+    async function bulkPut(storeName, values){ const s = await tx(storeName, 'readwrite'); return Promise.all(values.map(v=>new Promise((res,rej)=>{ const r=s.put(v); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error); }))); }
+    async function getAllByIndex(storeName, indexName, key){ const s = await tx(storeName); const idx = s.index(indexName); return new Promise((res,rej)=>{ const r=idx.getAll(key); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); }); }
+    async function getAll(storeName){ const s = await tx(storeName); return new Promise((res,rej)=>{ const r=s.getAll(); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); }); }
+
+    // ------------------------------
+    // Graph state (keeps full graph; view filters to critical)
+    // ------------------------------
+    let fullNodes = []; // all nodes from latest load
+    let fullLinks = [];
+    let nodes = [];     // filtered for view (critical)
+    let links = [];
+
+    let svg, simulation, gRoot, nodeSel, linkSel, labelSel;
+
+    const tooltipEl = document.getElementById('tooltip');
+    const infoPanel = document.getElementById('info-panel');
+    const infoContent = document.getElementById('info-content');
+
     const sampleData = {
       nodes: [
-        { id: "my-app", name: "My Application", version: "1.0.0", type: "root", cves: [] },
-        { id: "express", name: "Express", version: "4.17.1", type: "direct", cves: [] },
-        { id: "lodash", name: "Lodash", version: "4.17.19", type: "direct", cves: [ { id: "CVE-2021-23337", score: 7.2, description: "Prototype pollution vulnerability" } ] },
-        { id: "moment", name: "Moment.js", version: "2.24.0", type: "transitive", cves: [ { id: "CVE-2022-31129", score: 7.5, description: "ReDoS vulnerability in moment parsing" } ] },
-        { id: "axios", name: "Axios", version: "0.21.0", type: "direct", cves: [ { id: "CVE-2021-3749", score: 9.1, description: "Server-side request forgery vulnerability" } ] },
-        { id: "yargs-parser", name: "Yargs Parser", version: "13.1.1", type: "transitive", cves: [ { id: "CVE-2020-7608", score: 5.3, description: "Prototype pollution vulnerability" } ] },
-        { id: "minimist", name: "Minimist", version: "1.2.0", type: "transitive", cves: [ { id: "CVE-2021-44906", score: 9.8, description: "Prototype pollution leading to RCE" } ] },
-        { id: "serialize-js", name: "Serialize JavaScript", version: "3.1.0", type: "transitive", cves: [] },
-        { id: "handlebars", name: "Handlebars", version: "4.5.3", type: "transitive", cves: [ { id: "CVE-2021-23369", score: 8.1, description: "Remote code execution via template injection" } ] }
+        { id: "msvc-orders", name: "msvc-orders", version: "2.1.0", type: "root", cves: [] },
+        { id: "express@4.17.1", name: "express", version: "4.17.1", type: "direct", cves: [] },
+        { id: "lodash@4.17.19", name: "lodash", version: "4.17.19", type: "direct", cves: [{ id:"CVE-2021-23337", score:7.2, description:"Prototype pollution" }] },
+        { id: "tz@1.0.2", name: "tz", version: "1.0.2", type:"transitive", cves: [{ id:"CVE-2024-99999", score:9.8, description:"Arbitrary code execution in tz parser" }] },
+        { id: "yargs-parser@13.1.1", name: "yargs-parser", version: "13.1.1", type: "transitive", cves: [{ id:"CVE-2020-7608", score:5.3, description:"Prototype pollution" }] },
+        { id: "minimist@1.2.0", name: "minimist", version: "1.2.0", type: "transitive", cves: [{ id:"CVE-2021-44906", score:9.8, description:"RCE via prototype pollution" }] }
       ],
       links: [
-        { source: "my-app", target: "express", relationship: "direct dependency" },
-        { source: "my-app", target: "lodash", relationship: "direct dependency" },
-        { source: "my-app", target: "axios", relationship: "direct dependency" },
-        { source: "express", target: "moment", relationship: "transitive dependency" },
-        { source: "express", target: "serialize-js", relationship: "transitive dependency" },
-        { source: "lodash", target: "yargs-parser", relationship: "transitive dependency" },
-        { source: "axios", target: "minimist", relationship: "transitive dependency" },
-        { source: "moment", target: "handlebars", relationship: "transitive dependency" }
+        { source:"msvc-orders", target:"express@4.17.1", relationship:"direct dependency" },
+        { source:"msvc-orders", target:"lodash@4.17.19", relationship:"direct dependency" },
+        { source:"express@4.17.1", target:"tz@1.0.2", relationship:"transitive dependency" },
+        { source:"lodash@4.17.19", target:"yargs-parser@13.1.1", relationship:"transitive dependency" },
+        { source:"express@4.17.1", target:"minimist@1.2.0", relationship:"transitive dependency" }
       ]
     };
 
-    // ===== Graph state =====
-    let nodes = sampleData.nodes; // will be replaced by filtered
-    let links = sampleData.links; // will be replaced by filtered
-    let svg, simulation, node, link, labels;
+    // -------------- Helpers --------------
+    function maxCVSS(node){ return (node.cves && node.cves.length) ? Math.max(...node.cves.map(c=>+c.score||0)) : 0; }
+    function isCritical(node){ return maxCVSS(node) >= 9.0; }
+    function severityColor(node){ return isCritical(node) ? getColor('--crit') : getColor('--clean'); }
+    function getColor(v){ return getComputedStyle(document.documentElement).getPropertyValue(v) || '#95a5a6'; }
 
-    // ===== Helpers =====
-    const getSeverityColor = (cves) => {
-      if (!cves || cves.length === 0) return "#95a5a6"; // context
-      const maxScore = Math.max(...cves.map(c => c.score));
-      if (maxScore >= 9.0) return "#e74c3c"; // critical
-      if (maxScore >= 7.0) return "#f39c12"; // high
-      return "#95a5a6"; // shouldn't appear after filtering, but treat as context
-    };
-
-    const getSeverityLabel = (score) => {
-      if (score >= 9.0) return "Critical";
-      if (score >= 7.0) return "High";
-      return "Context";
-    };
-
-    function toId(v) { return (typeof v === 'object' && v !== null) ? v.id : v; }
-
-    // Build a reverse adjacency map to find ancestors
-    function buildReverseMap(edges) {
-      const rev = new Map();
-      edges.forEach(e => {
-        const s = toId(e.source), t = toId(e.target);
-        if (!rev.has(t)) rev.set(t, new Set());
-        rev.get(t).add(s);
-      });
-      return rev;
+    function filterCriticalView(){
+      const idSet = new Set();
+      // Keep all critical nodes and any roots
+      fullNodes.forEach(n=>{ if(n.type==='root' || isCritical(n)) idSet.add(n.id); });
+      // Only include links whose endpoints are kept
+      const filteredLinks = fullLinks.filter(l=> idSet.has(asId(l.source)) && idSet.has(asId(l.target)) );
+      const filteredNodes = fullNodes.filter(n=> idSet.has(n.id));
+      nodes = filteredNodes; links = filteredLinks;
     }
 
-    function filterHighAndCritical() {
-      const idToNode = new Map(nodes.map(n => [n.id, { ...n }]));
-      const reverse = buildReverseMap(links);
+    function asId(x){ return (typeof x === 'string') ? x : (x.id || x.name); }
 
-      // 1) Start with nodes that have High/Critical CVEs
-      const keep = new Set();
-      const vuln = new Set();
-      idToNode.forEach((n) => {
-        const maxScore = (n.cves && n.cves.length) ? Math.max(...n.cves.map(c => c.score)) : 0;
-        if (maxScore >= 7.0) { keep.add(n.id); vuln.add(n.id); }
-      });
-
-      // Always keep root if present
-      const roots = [...idToNode.values()].filter(n => n.type === 'root');
-      roots.forEach(r => keep.add(r.id));
-
-      // 2) Add all ancestors (connectors) that lead to kept nodes (to preserve paths)
-      const stack = [...keep];
-      while (stack.length) {
-        const cur = stack.pop();
-        const parents = reverse.get(cur);
-        if (!parents) continue;
-        parents.forEach(p => {
-          if (!keep.has(p)) { keep.add(p); stack.push(p); }
-        });
-      }
-
-      // 3) Tag context nodes (kept but not vulnerable and not root)
-      idToNode.forEach(n => {
-        n._context = keep.has(n.id) && !vuln.has(n.id) && n.type !== 'root';
-      });
-
-      // 4) Create filtered lists
-      const filteredNodes = [...idToNode.values()].filter(n => keep.has(n.id));
-      const keepIds = new Set(filteredNodes.map(n => n.id));
-      const filteredLinks = links.filter(e => keepIds.has(toId(e.source)) && keepIds.has(toId(e.target)));
-
-      nodes = filteredNodes;
-      links = filteredLinks;
-    }
-
-    // ===== Graph rendering =====
-    function initGraph() {
+    // -------------- Graph --------------
+    function initGraph(){
       const container = d3.select('#graph-container');
       const width = container.node().getBoundingClientRect().width;
       const height = container.node().getBoundingClientRect().height;
 
       svg = container.append('svg').attr('width', width).attr('height', height);
-
-      const zoom = d3.zoom().scaleExtent([0.1, 4]).on('zoom', (event) => {
-        svg.selectAll('g').attr('transform', event.transform);
-      });
+      const zoom = d3.zoom().scaleExtent([0.1, 4]).on('zoom', (ev)=>{ gRoot.attr('transform', ev.transform); });
       svg.call(zoom);
-
-      const g = svg.append('g');
+      gRoot = svg.append('g');
 
       simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(110))
+        .force('link', d3.forceLink(links).id(d=>d.id).distance(120))
         .force('charge', d3.forceManyBody().strength(-320))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(40));
+        .force('center', d3.forceCenter(width/2, height/2))
+        .force('collision', d3.forceCollide().radius(42));
 
-      link = g.append('g')
-        .selectAll('line')
-        .data(links)
-        .enter().append('line')
-        .attr('class', d => d.isDependency ? 'link dependency-link' : 'link')
-        .on('click', showLinkInfo)
-        .on('mouseover', showTooltip)
-        .on('mouseout', hideTooltip);
+      linkSel = gRoot.append('g').selectAll('line').data(links).enter().append('line')
+        .attr('class','link').on('click', (_,d)=>showLinkInfo(d)).on('mouseover', (ev,d)=>showTooltip(ev, `${d.relationship}`)).on('mouseout', hideTooltip);
 
-      node = g.append('g')
-        .selectAll('circle')
-        .data(nodes)
-        .enter().append('circle')
-        .attr('class', d => 'node' + (d._context ? ' context-node' : ''))
-        .attr('r', d => d.type === 'root' ? 25 : 20)
-        .attr('fill', d => getSeverityColor(d.cves))
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 3)
-        .on('click', showNodeInfo)
-        .on('mouseover', showTooltip)
-        .on('mouseout', hideTooltip)
-        .call(d3.drag()
-          .on('start', dragstarted)
-          .on('drag', dragged)
-          .on('end', dragended));
+      nodeSel = gRoot.append('g').selectAll('circle').data(nodes).enter().append('circle')
+        .attr('class','node').attr('r', d=> d.type==='root'?26:20)
+        .attr('fill', d=> severityColor(d)).attr('stroke','#fff').attr('stroke-width',3)
+        .on('click', (_,d)=>showNodeInfo(d))
+        .on('mouseover', (ev,d)=>{
+          const cv = maxCVSS(d); const cves = d.cves?.length||0; showTooltip(ev, `${d.name} v${d.version}${cves?` • ${cves} CVEs (max ${cv})`:''}`);
+        }).on('mouseout', hideTooltip)
+        .call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
 
-      labels = g.append('g')
-        .selectAll('text')
-        .data(nodes)
-        .enter().append('text')
-        .attr('class', 'node-label')
-        .attr('dy', 35)
-        .text(d => d.name);
+      labelSel = gRoot.append('g').selectAll('text').data(nodes).enter().append('text')
+        .attr('class','node-label').attr('dy', 34).text(d=>d.name);
 
-      simulation.on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-
-        node
-          .attr('cx', d => d.x)
-          .attr('cy', d => d.y);
-
-        labels
-          .attr('x', d => d.x)
-          .attr('y', d => d.y);
+      simulation.on('tick', ()=>{
+        linkSel.attr('x1', d=>d.source.x).attr('y1', d=>d.source.y).attr('x2', d=>d.target.x).attr('y2', d=>d.target.y);
+        nodeSel.attr('cx', d=>d.x).attr('cy', d=>d.y);
+        labelSel.attr('x', d=>d.x).attr('y', d=>d.y);
       });
     }
 
-    function showNodeInfo(event, d) {
-      const panel = document.getElementById('info-panel');
-      const content = document.getElementById('info-content');
+    function rebuild(){ d3.select('#graph-container').select('svg').remove(); filterCriticalView(); initGraph(); }
 
-      let html = `
-        <h3>📦 ${d.name}</h3>
-        <p><strong>Version:</strong> ${d.version}</p>
-        <p><strong>Type:</strong> ${d.type}${d._context ? ' (context)' : ''}</p>
-        ${d.bomRef ? `<p><strong>BOM Reference:</strong> ${d.bomRef}</p>` : ''}
-        ${d.group ? `<p><strong>Group:</strong> ${d.group}</p>` : ''}
-        ${d.scope ? `<p><strong>Scope:</strong> ${d.scope}</p>` : ''}
-        ${d.publisher ? `<p><strong>Publisher:</strong> ${d.publisher}</p>` : ''}
-        ${d.description ? `<p><strong>Description:</strong> ${d.description}</p>` : ''}
-        <p><strong>CVEs Found:</strong> ${d.cves.length}</p>
-      `;
-
-      if (d.cves.length > 0) {
-        html += '<h4>🚨 Security Vulnerabilities:</h4>';
-        d.cves.forEach(cve => {
-          html += `
-            <div class="cve-item" style="border-color: ${getSeverityColor([cve])};">
-              <div class="cve-id">${cve.id}</div>
-              <div class="cve-score" style="background: ${getSeverityColor([cve])};">${cve.score} (${cve.severity || getSeverityLabel(cve.score)})</div>
-              <p><strong>Description:</strong> ${cve.description || '—'}</p>
-              ${cve.published ? `<p><strong>Published:</strong> ${new Date(cve.published).toLocaleDateString()}</p>` : ''}
-              ${cve.updated ? `<p><strong>Updated:</strong> ${new Date(cve.updated).toLocaleDateString()}</p>` : ''}
-              ${cve.source && cve.source.name ? `<p><strong>Source:</strong> ${cve.source.name}</p>` : ''}
-            </div>
-          `;
-        });
-      } else if (d._context) {
-        html += '<p style="color:#7f8c8d;">ℹ️ Context node kept to preserve the path to a vulnerable dependency.</p>';
-      } else {
-        html += '<p style="color:#27ae60;">✅ No known vulnerabilities</p>';
-      }
-
-      // Relationships (using filtered links)
-      const incomingDeps = links.filter(l => toId(l.target) === d.id);
-      const outgoingDeps = links.filter(l => toId(l.source) === d.id);
-
-      if (incomingDeps.length > 0) {
-        html += '<h4>📥 Used By:</h4>';
-        incomingDeps.forEach(dep => {
-          const sourceNode = nodes.find(n => n.id === toId(dep.source));
-          if (sourceNode) html += `<p>• ${sourceNode.name} v${sourceNode.version}</p>`;
-        });
-      }
-
-      if (outgoingDeps.length > 0) {
-        html += '<h4>📤 Dependencies:</h4>';
-        outgoingDeps.forEach(dep => {
-          const targetNode = nodes.find(n => n.id === toId(dep.target));
-          if (targetNode) {
-            const vulnCount = targetNode.cves ? targetNode.cves.length : 0;
-            const vulnIndicator = vulnCount > 0 ? ` 🚨(${vulnCount} CVEs)` : '';
-            html += `<p>• ${targetNode.name} v${targetNode.version}${vulnIndicator}${targetNode._context ? ' (context)' : ''}</p>`;
-          }
-        });
-      }
-
-      content.innerHTML = html;
-      panel.style.display = 'block';
-    }
-
-    function showLinkInfo(event, d) {
-      const panel = document.getElementById('info-panel');
-      const content = document.getElementById('info-content');
-
-      const sourceNode = nodes.find(n => n.id === toId(d.source));
-      const targetNode = nodes.find(n => n.id === toId(d.target));
-
-      let html = `
-        <h3>🔗 Dependency Relationship</h3>
-        <p><strong>From:</strong> ${sourceNode.name} (${sourceNode.version})</p>
-        <p><strong>To:</strong> ${targetNode.name} (${targetNode.version})</p>
-        <p><strong>Relationship:</strong> ${d.relationship || 'dependency'}</p>
-      `;
-
-      if (targetNode.cves.length > 0) {
-        html += `
-          <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:10px;padding:15px;margin:15px 0;">
-            <h4>⚠️ Attack Path Identified</h4>
-            <p>This dependency introduces <strong>${targetNode.cves.length}</strong> vulnerability(s):</p>
-        `;
-        targetNode.cves.forEach(cve => {
-          html += `
-            <div class="cve-item">
-              <div class="cve-id">${cve.id}</div>
-              <div class="cve-score">${cve.score}</div>
-              <p>${cve.description || '—'}</p>
-            </div>
-          `;
-        });
-        html += '</div>';
-      }
-
-      content.innerHTML = html;
-      panel.style.display = 'block';
-    }
-
-    function showAttackPaths() {
-      // Highlight links that lead to vulnerable dependencies
-      link.classed('attack-path', d => {
-        const targetNode = nodes.find(n => n.id === toId(d.target));
-        return targetNode.cves && targetNode.cves.length > 0;
-      });
-
-      // Pulse vulnerable nodes
-      node.style('animation', d => (d.cves && d.cves.length > 0 ? 'pulse 2s infinite' : 'none'));
-
-      // Add CSS for pulse animation
+    function highlightCriticalPaths(){
+      // any link whose target is critical
+      linkSel.classed('attack-path', d=> isCritical(d.target));
+      // pulse
       const style = document.createElement('style');
-      style.textContent = `@keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.1)} 100%{transform:scale(1)} }`;
+      style.textContent = `@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.1)}100%{transform:scale(1)}}`;
       document.head.appendChild(style);
+      nodeSel.style('animation', d=> isCritical(d) ? 'pulse 2s infinite' : 'none');
     }
 
-    function resetView() {
-      link.classed('attack-path', false);
-      node.style('animation', 'none');
+    function resetView(){ if(!linkSel||!nodeSel) return; linkSel.classed('attack-path', false); nodeSel.style('animation','none'); }
+
+    function centerGraph(){ const s = d3.select('#graph-container svg'); if(!s.node()) return; const w=s.node().getBoundingClientRect().width, h=s.node().getBoundingClientRect().height; s.transition().duration(600).call(d3.zoom().transform, d3.zoomIdentity.translate(w/2,h/2).scale(1)); }
+
+    function showTooltip(ev, html){ tooltipEl.innerHTML = html; tooltipEl.style.left = (ev.pageX+10)+"px"; tooltipEl.style.top = (ev.pageY-10)+"px"; tooltipEl.style.opacity = 1; }
+    function hideTooltip(){ tooltipEl.style.opacity = 0; }
+
+    function showNodeInfo(d){
+      let html = `<h3>📦 ${d.name}</h3>` +
+                 `<p><strong>Version:</strong> ${d.version}</p>` +
+                 `<p><strong>Type:</strong> ${d.type}</p>` +
+                 `<p><strong>Critical CVEs:</strong> ${(d.cves||[]).filter(x=>+x.score>=9).length}</p>`;
+      if(d.cves && d.cves.length){
+        html += '<h4>🚨 Vulnerabilities</h4>';
+        d.cves.filter(x=>+x.score>=9).forEach(cve=>{
+          html += `<div class="result-step"><strong>${cve.id}</strong> — ${cve.score}<br/><span class="small">${cve.description||''}</span></div>`;
+        });
+      } else { html += '<p class="small muted">No CVEs recorded.</p>'; }
+      infoContent.innerHTML = html; infoPanel.style.display='block';
     }
 
-    function centerGraph() {
-      const svgEl = d3.select('#graph-container svg');
-      const width = svgEl.node().getBoundingClientRect().width;
-      const height = svgEl.node().getBoundingClientRect().height;
-      svgEl.transition().duration(750).call(
-        d3.zoom().transform,
-        d3.zoomIdentity.translate(width / 2, height / 2).scale(1)
-      );
-    }
-
-    function closeInfoPanel() { document.getElementById('info-panel').style.display = 'none'; }
-
-    function showTooltip(event, d) {
-      const tooltip = document.getElementById('tooltip');
-      let content = '';
-      if (d && d.name) {
-        // Node tooltip
-        const vulnCount = d.cves ? d.cves.length : 0;
-        const vulnText = vulnCount > 0 ? ` | ${vulnCount} CVEs` : (d._context ? ' | context' : '');
-        content = `${d.name} v${d.version}${vulnText}<br>Type: ${d.type}`;
-        if (d.bomRef && d.bomRef !== d.name) content += `<br>Ref: ${d.bomRef}`;
-      } else if (d && d.relationship) {
-        // Link tooltip
-        const linkType = d.isDependency ? ' (SBOM Dependency)' : '';
-        content = `${d.relationship}${linkType}<br>Click for details`;
+    function showLinkInfo(d){
+      const src = d.source, tgt = d.target;
+      let html = `<h3>🔗 Dependency</h3><p><strong>From:</strong> ${src.name} (${src.version})<br/><strong>To:</strong> ${tgt.name} (${tgt.version})</p><p><strong>Relationship:</strong> ${d.relationship}</p>`;
+      if(isCritical(tgt)){
+        html += `<div class="result-step"><strong>⚠️ Attack Path:</strong> Target is critical. Updating <em>${tgt.name}</em> or replacing it will break this path.</div>`;
       }
-      tooltip.innerHTML = content;
-      tooltip.style.left = (event.pageX + 10) + 'px';
-      tooltip.style.top = (event.pageY - 10) + 'px';
-      tooltip.style.opacity = 1;
-    }
-    function hideTooltip() { document.getElementById('tooltip').style.opacity = 0; }
-
-    function dragstarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
-    function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
-    function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
-
-    // ===== Lifecycle =====
-    window.addEventListener('load', () => { loadSampleData(); });
-    window.addEventListener('resize', () => { d3.select('#graph-container').select('svg').remove(); initGraph(); });
-
-    function loadSampleData() {
-      nodes = JSON.parse(JSON.stringify(sampleData.nodes));
-      links = JSON.parse(JSON.stringify(sampleData.links));
-      filterHighAndCritical();
-      updateGraph();
-      document.getElementById('file-status').textContent = 'Sample data loaded (Critical & High only)';
+      infoContent.innerHTML = html; infoPanel.style.display='block';
     }
 
-    function handleFileUpload(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        try {
-          const content = e.target.result;
-          const parsedData = parseFileContent(content, file.name);
-          if (parsedData) {
-            nodes = parsedData.nodes;
-            links = parsedData.links;
-            filterHighAndCritical();
-            updateGraph();
-            document.getElementById('file-status').textContent = `✅ ${file.name} loaded (Critical & High only)`;
-          } else {
-            document.getElementById('file-status').textContent = '❌ Unsupported or empty file';
-          }
-        } catch (error) {
-          console.error('Error parsing file:', error);
-          document.getElementById('file-status').textContent = '❌ Error parsing file';
-        }
-      };
-      reader.readAsText(file);
-    }
+    document.getElementById('close-info').onclick = ()=> infoPanel.style.display='none';
 
-    function parseFileContent(content, filename) {
-      const extension = filename.split('.').pop().toLowerCase();
-      try {
-        if (extension === 'json') return parseJSON(content);
-        if (extension === 'txt') return parsePackageList(content);
-        if (extension === 'yaml' || extension === 'yml') return parseYAML(content);
-      } catch (error) {
-        console.error('Parsing error:', error);
-        return null;
-      }
-      return null;
-    }
-
-    function parseJSON(content) {
+    // -------------- Parsing --------------
+    function parseJSONGeneric(content){
       const data = JSON.parse(content);
-      if (data.bomFormat || data.specVersion) return parseCycloneDX(data); // CycloneDX JSON
-      if (data.spdxVersion || data.SPDXID) return parseSPDX(data);        // SPDX JSON
-      if (data.name && data.dependencies) return parsePackageLock(data);  // npm package-lock.json
-      if (data.nodes && data.links) return data;                          // Already in graph format
-      if (data.dependencies || data.devDependencies) return parsePackageJSON(data); // package.json
+      if (data.bomFormat || data.specVersion) return parseCycloneDX(data);
+      if (data.spdxVersion || data.SPDXID)   return parseSPDX(data);
+      if (data.name && data.dependencies)    return parsePackageLock(data);
+      if (data.nodes && data.links)          return data;
+      if (data.dependencies || data.devDependencies) return parsePackageJSON(data);
       return null;
     }
 
-    function parseCycloneDX(data) {
-      const nodes = []; const links = []; const nodeMap = new Map(); const vulnerabilityMap = new Map();
-
-      if (data.vulnerabilities) {
-        data.vulnerabilities.forEach(vuln => {
-          if (vuln.affects && vuln.affects.length > 0) {
-            vuln.affects.forEach(affect => {
-              if (!affect.ref) return;
-              if (!vulnerabilityMap.has(affect.ref)) vulnerabilityMap.set(affect.ref, []);
-              let maxScore = 0; let severity = 'Unknown';
-              if (vuln.ratings && vuln.ratings.length > 0) {
-                vuln.ratings.forEach(rating => {
-                  if (rating.score && rating.score > maxScore) { maxScore = rating.score; severity = rating.severity || 'Unknown'; }
-                });
-              }
-              vulnerabilityMap.get(affect.ref).push({ id: vuln.id || 'Unknown CVE', score: maxScore, severity, description: vuln.description || vuln.detail || 'No description', source: vuln.source || {}, published: vuln.published, updated: vuln.updated });
-            });
-          }
+    function parseCycloneDX(data){
+      const nodes=[], links=[], nodeMap=new Map(), vulnMap=new Map();
+      if(data.vulnerabilities){
+        data.vulnerabilities.forEach(v=>{
+          (v.affects||[]).forEach(a=>{ if(!a.ref) return; if(!vulnMap.has(a.ref)) vulnMap.set(a.ref, []);
+            let maxScore=0, sev='Unknown';
+            (v.ratings||[]).forEach(r=>{ if(r.score && r.score>maxScore){ maxScore=r.score; sev=r.severity||sev; } });
+            vulnMap.get(a.ref).push({ id: v.id||'Unknown CVE', score: maxScore, severity: sev, description: v.description||v.detail||'' });
+          });
         });
       }
-
-      if (data.metadata && data.metadata.component) {
-        const rc = data.metadata.component;
-        const rootRef = rc['bom-ref'] || rc.name || 'root';
-        const rootComponent = { id: rootRef, name: rc.name || 'Root Application', version: rc.version || '1.0.0', type: 'root', bomRef: rootRef, cves: vulnerabilityMap.get(rootRef) || [] };
-        nodes.push(rootComponent); nodeMap.set(rootRef, rootComponent);
+      let root=null;
+      if(data.metadata && data.metadata.component){
+        const c=data.metadata.component, ref=c['bom-ref']||c.name||'root';
+        root={ id: ref, name: c.name||'Root', version:c.version||'1.0.0', type:'root', bomRef:ref, cves: vulnMap.get(ref)||[] };
+        nodes.push(root); nodeMap.set(ref, root);
       }
-
-      if (data.components) {
-        data.components.forEach(component => {
-          const bomRef = component['bom-ref'] || component.name || Math.random().toString(36).substr(2,9);
-          const node = { id: bomRef, name: component.name || 'Unknown', version: component.version || 'unknown', type: component.type || 'library', bomRef, scope: component.scope || 'required', supplier: component.supplier || {}, publisher: component.publisher || '', group: component.group || '', description: component.description || '', cves: vulnerabilityMap.get(bomRef) || [] };
-          nodes.push(node); nodeMap.set(bomRef, node);
-        });
-      }
-
-      if (data.dependencies) {
-        data.dependencies.forEach(dep => {
-          const sourceRef = dep.ref; const sourceNode = nodeMap.get(sourceRef);
-          if (sourceNode && dep.dependsOn && dep.dependsOn.length > 0) {
-            dep.dependsOn.forEach(targetRef => {
-              const targetNode = nodeMap.get(targetRef);
-              if (!targetNode) return;
-              let relType = (sourceNode.type === 'root' || sourceNode.type === 'application') ? 'direct dependency' : 'transitive dependency';
-              links.push({ source: sourceRef, target: targetRef, relationship: relType, sourceComponent: sourceNode, targetComponent: targetNode, isDependency: true });
-              if (sourceNode.type !== 'root' && targetNode.type !== 'root') targetNode.type = 'transitive';
-            });
-          }
-        });
-      }
-
-      return { nodes, links };
-    }
-
-    function parseSPDX(data) {
-      const nodes = []; const links = []; const nodeMap = new Map();
-      if (data.name) { const root = { id: data.SPDXID || 'root', name: data.name, version: data.versionInfo || '1.0.0', type: 'root', cves: [] }; nodes.push(root); nodeMap.set(root.id, root); }
-      if (data.packages) {
-        data.packages.forEach(pkg => {
-          const node = { id: pkg.SPDXID || pkg.name || Math.random().toString(36).substr(2,9), name: pkg.name || 'Unknown', version: pkg.versionInfo || 'unknown', type: 'direct', cves: [] };
-          nodes.push(node); nodeMap.set(node.id, node);
-        });
-      }
-      if (data.relationships) {
-        data.relationships.forEach(rel => {
-          if (rel.relationshipType === 'DEPENDS_ON' || rel.relationshipType === 'DEPENDENCY_OF') {
-            const s = nodeMap.get(rel.spdxElementId); const t = nodeMap.get(rel.relatedSpdxElement);
-            if (s && t) links.push({ source: s.id, target: t.id, relationship: rel.relationshipType.toLowerCase().replace('_', ' ') });
-          }
-        });
-      }
-      return { nodes, links };
-    }
-
-    function parsePackageLock(data) {
-      const nodes = []; const links = []; const nodeMap = new Map();
-      const root = { id: data.name || 'root', name: data.name || 'Root Application', version: data.version || '1.0.0', type: 'root', cves: [] };
-      nodes.push(root); nodeMap.set(root.id, root);
-      function processDependencies(deps, parentId, depth = 0) {
-        if (!deps) return;
-        Object.entries(deps).forEach(([name, info]) => {
-          const nodeId = `${name}@${info.version || 'unknown'}`;
-          if (!nodeMap.has(nodeId)) { const node = { id: nodeId, name, version: info.version || 'unknown', type: depth === 0 ? 'direct' : 'transitive', cves: [] }; nodes.push(node); nodeMap.set(nodeId, node); }
-          if (parentId) links.push({ source: parentId, target: nodeId, relationship: depth === 0 ? 'direct dependency' : 'transitive dependency' });
-          if (info.dependencies) processDependencies(info.dependencies, nodeId, depth + 1);
-        });
-      }
-      processDependencies(data.dependencies, root.id);
-      return { nodes, links };
-    }
-
-    function parsePackageJSON(data) {
-      const nodes = []; const links = [];
-      const root = { id: data.name || 'root', name: data.name || 'Root Application', version: data.version || '1.0.0', type: 'root', cves: [] };
-      nodes.push(root);
-      const allDeps = { ...(data.dependencies||{}), ...(data.devDependencies||{}), ...(data.peerDependencies||{}), ...(data.optionalDependencies||{}) };
-      Object.entries(allDeps).forEach(([name, version]) => {
-        const node = { id: `${name}@${version}`, name, version, type: 'direct', cves: [] };
-        nodes.push(node); links.push({ source: root.id, target: node.id, relationship: 'direct dependency' });
+      (data.components||[]).forEach(c=>{
+        const ref=c['bom-ref']||c.name||Math.random().toString(36).slice(2);
+        const n={ id: ref, name:c.name||'Unknown', version:c.version||'unknown', type:c.type||'library', bomRef:ref, scope:c.scope||'required', group:c.group||'', description:c.description||'', cves: vulnMap.get(ref)||[] };
+        nodes.push(n); nodeMap.set(ref,n);
+      });
+      (data.dependencies||[]).forEach(d=>{
+        const s=nodeMap.get(d.ref); if(!s) return; (d.dependsOn||[]).forEach(tRef=>{ const t=nodeMap.get(tRef); if(!t) return; links.push({ source:s.id, target:t.id, relationship: (s.type==='root'||s.type==='application')? 'direct dependency':'transitive dependency' }); });
       });
       return { nodes, links };
     }
 
-    function parsePackageList(content) {
-      const lines = content.split('\n').filter(line => line.trim());
-      const nodes = []; const links = [];
-      const root = { id: 'root', name: 'Root Application', version: '1.0.0', type: 'root', cves: [] };
-      nodes.push(root);
-      lines.forEach(line => {
-        const trimmed = line.trim(); if (!trimmed) return;
-        let name, version;
-        if (trimmed.includes('@')) [name, version] = trimmed.split('@');
-        else if (trimmed.includes('==')) [name, version] = trimmed.split('==');
-        else if (trimmed.includes(' ')) [name, version] = trimmed.split(' ');
-        else { name = trimmed; version = 'unknown'; }
-        const node = { id: `${name}@${version}`, name, version, type: 'direct', cves: [] };
-        nodes.push(node); links.push({ source: root.id, target: node.id, relationship: 'direct dependency' });
-      });
+    function parseSPDX(data){
+      const nodes=[], links=[], map=new Map();
+      if(data.name){ const root={ id:data.SPDXID||'root', name:data.name, version:data.versionInfo||'1.0.0', type:'root', cves:[] }; nodes.push(root); map.set(root.id,root); }
+      (data.packages||[]).forEach(p=>{ const id=p.SPDXID||p.name||Math.random().toString(36).slice(2); const n={ id, name:p.name||'Unknown', version:p.versionInfo||'unknown', type:'direct', cves:[] }; nodes.push(n); map.set(id,n); });
+      (data.relationships||[]).forEach(r=>{ if(r.relationshipType==='DEPENDS_ON'||r.relationshipType==='DEPENDENCY_OF'){ const s=map.get(r.spdxElementId), t=map.get(r.relatedSpdxElement); if(s&&t) links.push({ source:s.id, target:t.id, relationship:r.relationshipType.toLowerCase().replace('_',' ') }); } });
       return { nodes, links };
     }
 
-    function parseYAML(content) {
-      try {
-        const jsonContent = content
-          .replace(/:\s*$/gm, ': null')
-          .replace(/^(\s*)-\s+/gm, '$1"item": ')
-          .replace(/^(\s*)([^":\s]+):\s*(.+)$/gm, '$1"$2": "$3"');
-        return parseJSON(`{${jsonContent}}`);
-      } catch (e) { console.error('YAML parsing error:', e); return null; }
+    function parsePackageLock(data){
+      const nodes=[], links=[], map=new Map();
+      const root={ id:data.name||'root', name:data.name||'Root', version:data.version||'1.0.0', type:'root', cves:[] }; nodes.push(root); map.set(root.id, root);
+      function walk(deps, parentId, depth=0){ if(!deps) return; Object.entries(deps).forEach(([name, info])=>{
+        const id=`${name}@${info.version||'unknown'}`; if(!map.has(id)){ const n={ id, name, version:info.version||'unknown', type: depth===0?'direct':'transitive', cves: [] }; nodes.push(n); map.set(id,n); }
+        links.push({ source: parentId, target: id, relationship: depth===0?'direct dependency':'transitive dependency' });
+        if(info.dependencies) walk(info.dependencies, id, depth+1);
+      }); }
+      walk(data.dependencies, root.id, 0);
+      return { nodes, links };
     }
 
-    function updateGraph() {
-      d3.select('#graph-container').select('svg').remove();
-      initGraph();
-      const vulnCount = nodes.reduce((sum, n) => sum + (n.cves ? n.cves.length : 0), 0);
-      const depLinks = links.length;
-      console.log(`Graph updated: ${nodes.length} nodes, ${links.length} links (${depLinks} dependencies), ${vulnCount} total vulnerabilities`);
+    function parsePackageJSON(data){
+      const nodes=[], links=[]; const root={ id:data.name||'root', name:data.name||'Root', version:data.version||'1.0.0', type:'root', cves:[] }; nodes.push(root);
+      const all={ ...(data.dependencies||{}), ...(data.devDependencies||{}), ...(data.peerDependencies||{}), ...(data.optionalDependencies||{}) };
+      Object.entries(all).forEach(([name, ver])=>{ const id=`${name}@${ver}`; nodes.push({ id, name, version:ver, type:'direct', cves:[] }); links.push({ source:root.id, target:id, relationship:'direct dependency' }); });
+      return { nodes, links };
     }
+
+    function parseTxtList(content){
+      const lines = content.split('\n').map(x=>x.trim()).filter(Boolean);
+      const nodes=[], links=[]; const root={ id:'root', name:'Root', version:'1.0.0', type:'root', cves:[] }; nodes.push(root);
+      for(const line of lines){ let name, version='unknown'; if(line.includes('@')){ [name, version] = line.split('@'); } else if(line.includes('==')){ [name, version] = line.split('=='); } else if(line.includes(' ')){ [name, version] = line.split(' '); } else { name=line; }
+        const id=`${name}@${version}`; nodes.push({ id, name, version, type:'direct', cves:[] }); links.push({ source:root.id, target:id, relationship:'direct dependency' }); }
+      return { nodes, links };
+    }
+
+    async function handleFile(file){
+      const text = await file.text(); const ext = (file.name.split('.').pop()||'').toLowerCase();
+      if(ext==='json') return parseJSONGeneric(text);
+      if(ext==='xml')  { console.warn('XML parsing not implemented in this trimmed build. Provide CycloneDX JSON for best results.'); return null; }
+      if(ext==='yaml'||ext==='yml'){ console.warn('YAML parsing not implemented in this trimmed build.'); return null; }
+      if(ext==='txt')  return parseTxtList(text);
+      return null;
+    }
+
+    // -------------- Persistence (Ingest) --------------
+    async function ingestToDB(projectId, data){
+      if(!projectId) throw new Error('Project name is required');
+      await put('projects', { id: projectId, updatedAt: Date.now() });
+      const comps = data.nodes.map(n=>({ projectId, id:n.id, name:n.name, version:n.version, type:n.type, cves:n.cves||[] }));
+      const deps  = data.links.map(l=>({ projectId, source: asId(l.source), target: asId(l.target), relationship:l.relationship||'dependency' }));
+      await bulkPut('components', comps); await bulkPut('dependencies', deps);
+    }
+
+    // -------------- Path Finding --------------
+    async function getGraphForProject(projectId){
+      const comps = await getAllByIndex('components','byProject', projectId);
+      const deps  = await getAllByIndex('dependencies','byProject', projectId);
+      const map = new Map(comps.map(c=>[c.id,c]));
+      // Build adjacency
+      const adj = new Map();
+      deps.forEach(d=>{ if(!adj.has(d.source)) adj.set(d.source, []); adj.get(d.source).push(d.target); });
+      return { comps, deps, map, adj };
+    }
+
+    function bfsPath(adj, start, goal){
+      const q=[[start]]; const seen=new Set([start]);
+      while(q.length){ const path=q.shift(); const last=path[path.length-1]; if(last===goal) return path; const ns=adj.get(last)||[]; for(const n of ns){ if(!seen.has(n)){ seen.add(n); q.push([...path,n]); } }
+      }
+      return null;
+    }
+
+    function fixAdvice(path){
+      // The direct depender of the target is the last predecessor
+      if(!path || path.length < 2) return null;
+      const target = path[path.length-1];
+      const directOwner = path[path.length-2];
+      return { target, directOwner };
+    }
+
+    function renderPathSummary(projectId, path, map){
+      const el = document.getElementById('path-result');
+      if(!path){ el.innerHTML = '<p class="small muted">No path found.</p>'; return; }
+      const steps = path.map(id=> map.get(id) || {id,name:id,version:'?'});
+      const advice = fixAdvice(path);
+      el.innerHTML = `
+        <div class="result-step"><strong>Project:</strong> ${projectId}</div>
+        ${steps.map((s,i)=>`<div class="result-step">${i===0?'Source':'→'} <strong>${s.name||s.id}</strong> <span class="muted">v${s.version||''}</span></div>`).join('')}
+        <div class="result-step">🎯 <strong>Direct owner to fix:</strong> <code>${advice.directOwner}</code><br/><span class="small">Bump/replace dependency where <code>${advice.directOwner}</code> lists <code>${advice.target}</code> directly.</span></div>
+      `;
+    }
+
+    // -------------- UI Wiring --------------
+    document.getElementById('btn-sample').onclick = async ()=>{
+      fullNodes = [...sampleData.nodes]; fullLinks = [...sampleData.links]; rebuild();
+      document.getElementById('file-status').textContent = 'Sample loaded';
+    };
+
+    document.getElementById('btn-attack').onclick = ()=> highlightCriticalPaths();
+    document.getElementById('btn-reset').onclick  = ()=> resetView();
+    document.getElementById('btn-center').onclick = ()=> centerGraph();
+
+    document.getElementById('file-upload').addEventListener('change', async (e)=>{
+      const f = e.target.files[0]; if(!f) return; const parsed = await handleFile(f);
+      if(!parsed){ document.getElementById('file-status').textContent = '❌ Unsupported or unparsed file'; return; }
+      fullNodes = parsed.nodes; fullLinks = parsed.links; rebuild();
+      document.getElementById('file-status').textContent = `✅ ${f.name} parsed`;
+    });
+
+    document.getElementById('ingest-btn').onclick = async ()=>{
+      const project = (document.getElementById('project-name').value||'').trim();
+      if(!project){ alert('Enter a Project / Service name'); return; }
+      if(!fullNodes.length){ alert('Load SBOM or sample first'); return; }
+      try{ await ingestToDB(project, {nodes: fullNodes, links: fullLinks}); document.getElementById('file-status').textContent = `💾 Saved to DB for project "${project}"`; }
+      catch(err){ console.error(err); alert('Failed to save: '+err.message); }
+    };
+
+    document.getElementById('btn-find').onclick = async ()=>{
+      const project = (document.getElementById('project-name').value||'').trim();
+      const src = (document.getElementById('path-src').value||'').trim();
+      const dst = (document.getElementById('path-dst').value||'').trim();
+      if(!project || !src || !dst){ alert('Provide Project name, Source, and Target Library'); return; }
+      const { adj, map } = await getGraphForProject(project);
+      const path = bfsPath(adj, src, dst);
+      renderPathSummary(project, path, map);
+    };
+
+    // first paint: sample for convenience
+    fullNodes = [...sampleData.nodes]; fullLinks = [...sampleData.links]; rebuild();
+
+    // --- DnD helpers
+    function dragstarted(event,d){ if(!event.active) simulation.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
+    function dragged(event,d){ d.fx=event.x; d.fy=event.y; }
+    function dragended(event,d){ if(!event.active) simulation.alphaTarget(0); d.fx=null; d.fy=null; }
   </script>
 </body>
 </html>
