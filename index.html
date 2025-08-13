@@ -1,4 +1,534 @@
 <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SBOM / SCA Component Visualizer</title>
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- D3.js (force graph) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" integrity="sha512-Vr8t4qN6zx5QHkxT9zHPO7S5H1gUxJ69w2yq0Jb0m8sx+oVv2jzjr4p0QMt8YeOAHQwXxYRM4hXg2/5h6qkLtg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- FileSaver for PNG export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" integrity="sha512-5x3b6WbQ0Wc8sYyQKcO3w0g8o2f4zKf2fQ7G3v6X6YH8n8g4Y3bU5b9zX1XkKq1QvE7mqls8ZQm2oE3B+f5wWg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    /* hide scrollbars in graph canvas container for a cleaner look */
+    .graph-container { scrollbar-width: thin; }
+    .pill { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
+    .badge { @apply px-2 py-0.5 rounded text-xs font-semibold; }
+    .shadow-soft { box-shadow: 0 10px 25px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.06); }
+    .node:hover { cursor: pointer; }
+    .tick text { font-size: 10px; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 min-h-screen text-slate-100">
+  <header class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold">SBOM / SCA Component Visualizer</h1>
+        <p class="text-slate-300 mt-1">Load a CycloneDX or SPDX document to explore components, dependencies, and vulnerability hotspots.</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-export" class="bg-slate-700 hover:bg-slate-600 rounded-xl px-3 py-2 text-sm">Export PNG</button>
+        <a href="#" id="btn-sample" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-3 py-2 text-sm font-semibold">Load Sample</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10 grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- Left: Controls -->
+    <section class="lg:col-span-1 space-y-4">
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft">
+        <h2 class="text-lg font-semibold mb-3">1) Load SBOM</h2>
+        <label class="block border border-slate-600 border-dashed rounded-xl p-4 text-center hover:bg-white/5 cursor-pointer">
+          <input id="file-input" type="file" accept=".json,.xml,.spdx,.cdx,.cdx.json,.bom" class="hidden" />
+          <div class="text-sm text-slate-300">Drop or click to load <span class="font-semibold">CycloneDX / SPDX</span> (JSON preferred)</div>
+        </label>
+        <div class="mt-3 text-xs text-slate-400">Nothing leaves your browser. Parsing is done locally.</div>
+      </div>
+
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft">
+        <h2 class="text-lg font-semibold mb-3">2) Filters</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs mb-1">Search</label>
+            <input id="search" type="text" placeholder="name, purl, license…" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs mb-1">Severity</label>
+            <div class="flex flex-wrap gap-2">
+              <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="severity" value="critical" checked> Critical</label>
+              <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="severity" value="high" checked> High</label>
+              <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="severity" value="medium" checked> Medium</label>
+              <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="severity" value="low" checked> Low</label>
+              <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="severity" value="none" checked> None</label>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2 text-sm"><input id="toggle-transitive" type="checkbox" checked> Show transitive deps</label>
+            <label class="flex items-center gap-2 text-sm"><input id="toggle-dev" type="checkbox" checked> Include dev/test</label>
+          </div>
+          <button id="btn-apply" class="w-full bg-indigo-600 hover:bg-indigo-500 rounded-xl px-3 py-2 text-sm font-semibold">Apply Filters</button>
+        </div>
+      </div>
+
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft">
+        <h2 class="text-lg font-semibold mb-3">Legend</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#ef4444"></span> Critical</div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#f97316"></span> High</div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#eab308"></span> Medium</div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#22c55e"></span> Low</div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#38bdf8"></span> None/Unknown</div>
+        </div>
+      </div>
+
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft text-xs text-slate-300">
+        <h2 class="text-lg font-semibold mb-2">Tips</h2>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>CycloneDX: we read <code>components</code>, <code>dependencies</code> and <code>vulnerabilities</code>.</li>
+          <li>SPDX: we infer components from <code>packages</code> and relationships (<code>DEPENDS_ON</code>).</li>
+          <li>Node color = worst (highest) severity affecting the component.</li>
+          <li>Click a node to pin/unpin and inspect details.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Right: Visualization + Table -->
+    <section class="lg:col-span-3 space-y-4">
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-lg font-semibold">Dependency Graph</h2>
+          <div class="text-xs text-slate-300" id="stats">0 components • 0 edges</div>
+        </div>
+        <div id="graph" class="graph-container bg-slate-900/60 rounded-xl" style="height: 460px; position: relative;"></div>
+      </div>
+
+      <div class="bg-white/5 rounded-2xl p-4 shadow-soft">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">Components</h2>
+          <div class="text-xs text-slate-300" id="affectedSummary">—</div>
+        </div>
+        <div class="overflow-auto rounded-lg border border-slate-700">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-800/70 text-slate-200">
+              <tr>
+                <th class="text-left px-3 py-2">Name</th>
+                <th class="text-left px-3 py-2">Version</th>
+                <th class="text-left px-3 py-2">PURL</th>
+                <th class="text-left px-3 py-2">License</th>
+                <th class="text-left px-3 py-2">Severity</th>
+                <th class="text-left px-3 py-2">Direct?</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Tooltip -->
+  <div id="tooltip" class="hidden fixed z-50 pointer-events-none bg-slate-900/95 border border-slate-700 text-xs rounded-md p-2 shadow-xl max-w-xs"></div>
+
+  <script>
+    // ------------ Utilities ------------
+    const sevOrder = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
+    const sevColor = {
+      critical: '#ef4444',
+      high: '#f97316',
+      medium: '#eab308',
+      low: '#22c55e',
+      none: '#38bdf8'
+    };
+
+    function worstSeverity(levels) {
+      let max = 'none';
+      for (const lv of levels) {
+        const k = (lv || 'none').toLowerCase();
+        if (sevOrder[k] > sevOrder[max]) max = k;
+      }
+      return max;
+    }
+
+    function textSev(scoreOrName) {
+      if (typeof scoreOrName === 'number') {
+        if (scoreOrName >= 9.0) return 'critical';
+        if (scoreOrName >= 7.0) return 'high';
+        if (scoreOrName >= 4.0) return 'medium';
+        if (scoreOrName > 0) return 'low';
+        return 'none';
+      }
+      const s = String(scoreOrName || '').toLowerCase();
+      if (s.includes('critical')) return 'critical';
+      if (s.includes('high')) return 'high';
+      if (s.includes('medium')) return 'medium';
+      if (s.includes('low')) return 'low';
+      return 'none';
+    }
+
+    function sanitize(str) {
+      return (str == null ? '' : String(str)).trim();
+    }
+
+    // ------------ Parsers ------------
+    function parseCycloneDX(json) {
+      const components = (json.components || []).map(c => ({
+        id: c['bom-ref'] || c.purl || `${c.name}@${c.version || '0.0.0'}`,
+        name: c.name,
+        version: c.version,
+        purl: c.purl,
+        licenses: (c.licenses || []).map(l => l.license?.id || l.license?.name).filter(Boolean),
+        type: c.type || 'library',
+        scope: c.scope || 'required',
+        direct: true, // will adjust below based on dependencies block
+        vulns: []
+      }));
+
+      const compIndex = new Map(components.map(c => [c.id, c]));
+
+      // dependencies -> edges
+      const edges = [];
+      const deps = json.dependencies || [];
+      const rootRefs = new Set();
+      deps.forEach(d => {
+        const from = d.ref; if (!from) return;
+        if (!d.dependencies || d.dependencies.length === 0) {
+          rootRefs.add(from); // likely an app root
+        }
+        (d.dependencies || []).forEach(child => {
+          edges.push({ source: from, target: child.ref });
+          const childComp = compIndex.get(child.ref);
+          if (childComp) childComp.direct = false; // mark as transitive if only referenced by others
+        });
+      });
+
+      // vulnerabilities at top-level (CycloneDX 1.4+)
+      const vulns = json.vulnerabilities || [];
+      for (const v of vulns) {
+        const affects = v.affects || [];
+        const sev = textSev(v.ratings?.[0]?.severity || v.riskScore);
+        const score = v.ratings?.[0]?.score;
+        for (const a of affects) {
+          const ref = a.ref; const c = compIndex.get(ref);
+          if (c) c.vulns.push({ id: v.id, severity: sev, score, description: v.description });
+        }
+      }
+
+      // compute worst severity per component
+      for (const c of components) {
+        c.worst = worstSeverity(c.vulns.map(v => v.severity));
+        if (!c.worst) c.worst = 'none';
+      }
+
+      return { components, edges };
+    }
+
+    function parseSPDX(json) {
+      const pkgs = (json.packages || []).map(p => ({
+        id: p.SPDXID || `${p.name}@${p.versionInfo || ''}`,
+        name: p.name,
+        version: p.versionInfo,
+        purl: p.packageURL,
+        licenses: [p.licenseConcluded, p.licenseDeclared, p.licenseInfoFromFiles].flat().filter(Boolean),
+        type: 'library',
+        scope: 'required',
+        direct: true, // will mark transitive via relationships
+        vulns: [] // SPDX typically external to VEX; keep placeholder
+      }));
+      const compIndex = new Map(pkgs.map(p => [p.id, p]));
+
+      const edges = [];
+      const rels = (json.relationships || []).filter(r => /DEPENDS_ON|PREREQUISITE_FOR/i.test(r.relationshipType || ''));
+      for (const r of rels) {
+        const source = r.spdxElementId;
+        const target = r.relatedSpdxElement;
+        edges.push({ source, target });
+        const t = compIndex.get(target);
+        if (t) t.direct = false;
+      }
+
+      // No native vulnerabilities; default to none.
+      for (const c of pkgs) c.worst = 'none';
+      return { components: pkgs, edges };
+    }
+
+    function detectFormat(obj) {
+      if (obj.bomFormat === 'CycloneDX' || obj.components || obj.vulnerabilities) return 'cyclonedx';
+      if (obj.spdxVersion || obj.packages) return 'spdx';
+      return 'unknown';
+    }
+
+    // ------------ State ------------
+    let raw = null; // original parsed object
+    let data = { components: [], edges: [] }; // normalized
+
+    // ------------ Rendering ------------
+    function render() {
+      // apply filters
+      const text = sanitize(document.getElementById('search').value).toLowerCase();
+      const allowedSev = new Set([...document.querySelectorAll('.severity:checked')].map(el => el.value));
+      const showTransitive = document.getElementById('toggle-transitive').checked;
+      const includeDev = document.getElementById('toggle-dev').checked;
+
+      const visibleIds = new Set();
+      const comps = data.components.filter(c => {
+        if (!showTransitive && !c.direct) return false;
+        if (!includeDev && /dev|test/i.test(c.scope)) return false;
+        if (!allowedSev.has(c.worst || 'none')) return false;
+        if (text) {
+          const hay = [c.name, c.version, c.purl, ...(c.licenses||[])].join(' ').toLowerCase();
+          if (!hay.includes(text)) return false;
+        }
+        visibleIds.add(c.id);
+        return true;
+      });
+      const edges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+
+      document.getElementById('stats').textContent = `${comps.length} components • ${edges.length} edges`;
+
+      const affected = comps.filter(c => (c.worst && c.worst !== 'none')).length;
+      document.getElementById('affectedSummary').textContent = `${affected} affected • ${comps.length - affected} unaffected`;
+
+      drawGraph(comps, edges);
+      drawTable(comps);
+    }
+
+    function drawTable(comps) {
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      comps.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40';
+        tr.innerHTML = `
+          <td class="px-3 py-2">
+            <div class="font-medium">${escapeHtml(c.name || '(unknown)')}</div>
+            <div class="text-xs text-slate-400">${escapeHtml(c.id)}</div>
+          </td>
+          <td class="px-3 py-2">${escapeHtml(c.version || '')}</td>
+          <td class="px-3 py-2 truncate max-w-[260px]" title="${escapeHtml(c.purl || '')}">${escapeHtml(c.purl || '')}</td>
+          <td class="px-3 py-2">${(c.licenses||[]).slice(0,2).map(l => `<span class='badge bg-slate-700 mr-1'>${escapeHtml(l)}</span>`).join('')}</td>
+          <td class="px-3 py-2"><span class="badge" style="background:${sevColor[c.worst||'none']}">${(c.worst||'none').toUpperCase()}</span></td>
+          <td class="px-3 py-2">${c.direct ? 'Direct' : 'Transitive'}</td>
+        `;
+        fragment.appendChild(tr);
+      });
+      tbody.appendChild(fragment);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"]+/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+    }
+
+    // --- Graph ---
+    let simulation = null;
+
+    function drawGraph(nodesIn, linksIn) {
+      const container = document.getElementById('graph');
+      container.innerHTML = '';
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      const svg = d3.select(container)
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+      const defs = svg.append('defs');
+      defs.append('marker')
+        .attr('id','arrow')
+        .attr('viewBox','0 -5 10 10')
+        .attr('refX', 14)
+        .attr('refY',0)
+        .attr('markerWidth',6)
+        .attr('markerHeight',6)
+        .attr('orient','auto')
+        .append('path')
+        .attr('d','M0,-5L10,0L0,5')
+        .attr('fill','#94a3b8');
+
+      const links = svg.append('g').selectAll('line')
+        .data(linksIn)
+        .enter().append('line')
+        .attr('stroke','#94a3b8')
+        .attr('stroke-opacity',0.4)
+        .attr('stroke-width',1.2)
+        .attr('marker-end','url(#arrow)');
+
+      const nodes = svg.append('g').selectAll('g')
+        .data(nodesIn, d => d.id)
+        .enter().append('g')
+        .attr('class','node')
+        .call(drag(simulation));
+
+      nodes.append('circle')
+        .attr('r', d => Math.max(6, Math.min(18, (d.vulns?.length||0)*2 + 6)))
+        .attr('fill', d => sevColor[d.worst || 'none'])
+        .attr('stroke','#0f172a')
+        .attr('stroke-width',1.5)
+        .on('mouseover', showTooltip)
+        .on('mousemove', moveTooltip)
+        .on('mouseout', hideTooltip)
+        .on('click', (_, d) => {
+          d.fx = (d.fx == null) ? d.x : null;
+          d.fy = (d.fy == null) ? d.y : null;
+        });
+
+      nodes.append('text')
+        .text(d => d.name || '—')
+        .attr('x', 10)
+        .attr('y', 4)
+        .attr('font-size','10px')
+        .attr('fill','#e2e8f0');
+
+      simulation = d3.forceSimulation(nodesIn)
+        .force('link', d3.forceLink(linksIn).id(d => d.id).distance(55).strength(0.45))
+        .force('charge', d3.forceManyBody().strength(-180))
+        .force('center', d3.forceCenter(width/2, height/2))
+        .force('collide', d3.forceCollide().radius(22))
+        .on('tick', ticked);
+
+      function ticked() {
+        links
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+
+        nodes.attr('transform', d => `translate(${d.x},${d.y})`);
+      }
+
+      function drag(sim) {
+        function dragstarted(event, d) {
+          if (!event.active) sim.alphaTarget(0.25).restart();
+          d.fx = d.x; d.fy = d.y;
+        }
+        function dragged(event, d) {
+          d.fx = event.x; d.fy = event.y;
+        }
+        function dragended(event, d) {
+          if (!event.active) sim.alphaTarget(0);
+        }
+        return d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended);
+      }
+
+      // Save for export
+      container._svg = svg.node();
+    }
+
+    // Tooltip helpers
+    function showTooltip(event, d) {
+      const tip = document.getElementById('tooltip');
+      const vulns = (d.vulns || []).slice(0,6).map(v => `<div class='mt-1'><span class='badge' style='background:${sevColor[v.severity]}'>${v.severity.toUpperCase()}</span> <span class='text-slate-200 font-medium'>${escapeHtml(v.id || '')}</span></div>`).join('');
+      tip.innerHTML = `
+        <div class='text-slate-200 font-semibold text-xs mb-1'>${escapeHtml(d.name || '')} <span class='text-slate-400'>${escapeHtml(d.version || '')}</span></div>
+        <div class='text-slate-400'>${escapeHtml(d.purl || '')}</div>
+        <div class='mt-2 text-slate-300'>Worst: <span class='font-semibold' style='color:${sevColor[d.worst||'none']}'>${(d.worst||'none').toUpperCase()}</span></div>
+        ${vulns || '<div class="mt-2 text-slate-400">No known vulnerabilities</div>'}
+      `;
+      tip.classList.remove('hidden');
+      moveTooltip(event);
+    }
+    function moveTooltip(event) {
+      const tip = document.getElementById('tooltip');
+      tip.style.left = (event.clientX + 12) + 'px';
+      tip.style.top  = (event.clientY + 12) + 'px';
+    }
+    function hideTooltip() { document.getElementById('tooltip').classList.add('hidden'); }
+
+    // ------------ File loading ------------
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const json = JSON.parse(text);
+        loadObj(json);
+      } catch (err) {
+        alert('Failed to parse JSON. If you provided XML, please convert to JSON first.');
+        console.error(err);
+      }
+    });
+
+    function loadObj(obj) {
+      raw = obj;
+      const kind = detectFormat(obj);
+      if (kind === 'cyclonedx') data = parseCycloneDX(obj);
+      else if (kind === 'spdx') data = parseSPDX(obj);
+      else {
+        alert('Unknown SBOM format. Expecting CycloneDX or SPDX JSON.');
+        return;
+      }
+      render();
+    }
+
+    // ------------ Export PNG ------------
+    document.getElementById('btn-export').addEventListener('click', () => {
+      const svgNode = document.getElementById('graph')._svg;
+      if (!svgNode) return;
+      const svgData = new XMLSerializer().serializeToString(svgNode);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = svgNode.clientWidth * 2;
+        canvas.height = svgNode.clientHeight * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(2,2);
+        ctx.fillStyle = '#0b1220';
+        ctx.fillRect(0,0,svgNode.clientWidth, svgNode.clientHeight);
+        ctx.drawImage(img,0,0);
+        canvas.toBlob(b => saveAs(b, 'sbom-graph.png'));
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+
+    // ------------ Filters ------------
+    document.getElementById('btn-apply').addEventListener('click', render);
+    document.getElementById('search').addEventListener('keydown', e => { if (e.key === 'Enter') render(); });
+
+    // ------------ Sample Data ------------
+    document.getElementById('btn-sample').addEventListener('click', (e) => {
+      e.preventDefault();
+      const sample = makeSampleCycloneDX();
+      loadObj(sample);
+    });
+
+    function makeSampleCycloneDX() {
+      // Tiny CycloneDX-ish sample containing vulnerabilities
+      return {
+        bomFormat: 'CycloneDX',
+        specVersion: '1.4',
+        components: [
+          { "bom-ref": "app@1.0.0", name: "demo-app", version: "1.0.0", type: "application", scope: "required" },
+          { "bom-ref": "pkg:npm/express@4.17.1", name: "express", version: "4.17.1", type: "library", purl: "pkg:npm/express@4.17.1" },
+          { "bom-ref": "pkg:npm/lodash@4.17.20", name: "lodash", version: "4.17.20", type: "library", purl: "pkg:npm/lodash@4.17.20" },
+          { "bom-ref": "pkg:npm/moment@2.29.1", name: "moment", version: "2.29.1", type: "library", purl: "pkg:npm/moment@2.29.1" },
+          { "bom-ref": "pkg:npm/minimist@1.2.5", name: "minimist", version: "1.2.5", type: "library", purl: "pkg:npm/minimist@1.2.5" }
+        ],
+        dependencies: [
+          { ref: "app@1.0.0", dependencies: [ { ref: "pkg:npm/express@4.17.1" }, { ref: "pkg:npm/lodash@4.17.20" } ] },
+          { ref: "pkg:npm/express@4.17.1", dependencies: [ { ref: "pkg:npm/minimist@1.2.5" } ] },
+          { ref: "pkg:npm/lodash@4.17.20", dependencies: [ { ref: "pkg:npm/moment@2.29.1" } ] }
+        ],
+        vulnerabilities: [
+          { id: "CVE-2020-8203", description: "Prototype pollution in lodash.", ratings: [{ severity: "HIGH", score: 7.4 }], affects: [{ ref: "pkg:npm/lodash@4.17.20" }] },
+          { id: "CVE-2021-44906", description: "minimist prototype pollution.", ratings: [{ severity: "CRITICAL", score: 9.8 }], affects: [{ ref: "pkg:npm/minimist@1.2.5" }] },
+          { id: "CVE-2020-28469", description: "Denial of service vulnerability in moment.", ratings: [{ severity: "MEDIUM", score: 5.3 }], affects: [{ ref: "pkg:npm/moment@2.29.1" }] }
+        ]
+      };
+    }
+
+    // Initial empty render
+    render();
+  </script>
+</body>
+</html>
+
+<!-- <!DOCTYPE html>
 <html>
 <head>
 <title>
@@ -63,3 +593,4 @@ document.addEventListener("DOMContentLoaded", function (event) {
 <script type="text/javascript" src="assets/main.70a66962.js"></script>
 </body>
 </html>
+ -->
